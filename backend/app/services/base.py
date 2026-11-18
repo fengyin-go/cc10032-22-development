@@ -50,14 +50,19 @@ class BaseModuleService:
         ]
         if missing:
             return None, missing
+        entry = self.new_entry(values)
+        store.rows(self.MODULE).append(entry)
+        return entry, []
+
+    def new_entry(self, values: dict[str, Any]) -> dict[str, Any]:
+        """构造一条未落库的新记录；子模块可覆写以补齐领域字段。"""
         rows = store.rows(self.MODULE)
         entry = {"id": max((int(row.get("id", 0)) for row in rows), default=0) + 1}
         entry.update({field: values.get(field) for field in self.LIST_FIELDS})
         entry["status"] = self.STATUS_ORDER[0]
         entry["pending"] = True
         entry["abnormal"] = False
-        rows.append(entry)
-        return entry, []
+        return entry
 
     def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
         entry = store.find(self.MODULE, entry_id)

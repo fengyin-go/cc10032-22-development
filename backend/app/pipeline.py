@@ -585,31 +585,35 @@ def trace_metric_lineage(
     operators: list[str],
     output_targets: list[str],
 ) -> dict[str, Any]:
-    """追踪指标从源端到输出的全链路血缘。"""
-    lineage = {
+    """追踪指标从源端到输出的全链路血缘。
+
+    与 MetricLineageService 共用同一份版本台账：链路追踪也必须产生
+    「来源批次 + 路径版本」，不能只写一段路径文本覆盖旧记录。
+    """
+    from app.services.metric_lineage import MetricLineageService
+
+    service = MetricLineageService()
+    result = service.refresh_lineage_from_path(
+        metric_name,
+        sources=source_modules,
+        operators=operators,
+        outputs=output_targets,
+        origin="pipeline",
+    )
+    version = result["version"]
+    return {
+        **copy.deepcopy(result.get("lineage") or {}),
         "记录ID": f"lineage_{metric_name}",
         "指标名称": metric_name,
-        "上游源端": "→".join(source_modules),
-        "中间算子": "→".join(operators),
-        "输出目标": "→".join(output_targets),
-        "更新时间": time.strftime("%Y-%m-%d"),
-        "版本号": f"v{int(time.time()) % 100}",
-        "status": "正常",
-        "pending": False,
-        "abnormal": False,
+        "上游源端": " → ".join(version.get("sources") or []),
+        "中间算子": version.get("operator_chain", ""),
+        "输出目标": " → ".join(version.get("outputs") or []),
+        "版本号": version.get("path_version", ""),
+        "来源批次": version.get("source_batch", ""),
+        "路径版本": version.get("path_version", ""),
+        "血缘版本ID": version.get("version_id", ""),
+        "status": version.get("status", "正常"),
     }
-    existing = False
-    for row in store.rows("metric_lineage"):
-        if row.get("记录ID") == lineage["记录ID"]:
-            row.update(lineage)
-            existing = True
-            break
-    if not existing:
-        lineage["id"] = max(
-            (int(r.get("id", 0)) for r in store.rows("metric_lineage")), default=0
-        ) + 1
-        store.rows("metric_lineage").append(lineage)
-    return lineage
 
 
 # ---- 链路8: 端到端管道编排 ----

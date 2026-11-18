@@ -6,10 +6,12 @@
 """
 from __future__ import annotations
 
+import contextlib
 import copy
+import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Iterator
 
 from app.seed import SEED_ROWS
 
@@ -89,6 +91,94 @@ class Store:
         self._channels: dict[str, DataChannelEvent] = {}
         # 失败恢复记录：recovery_id → FailureRecovery
         self._failures: dict[str, FailureRecovery] = {}
+        # 指标血缘版本台账：path_key → 该路径的全部版本（按 version 升序追加）
+        self._lineage_ledger: dict[str, list[dict[str, Any]]] = {}
+        # 回放验证报告台账：report_id → 报告
+        self._replay_reports: dict[str, dict[str, Any]] = {}
+        # 刷新/回放并发写同一路径时共用一把可重入锁，保证版本串行分配
+        self._lock = threading.RLock()
+
+    # ---- 事务与并发 ----
+
+    def lock(self) -> threading.RLock:
+        """返回进程内可重入锁：同一路径的刷新与回放创建按快照时点串行。"""
+        return self._lock
+
+    @contextlib.contextmanager
+    def transaction(
+        self,
+        *modules: str,
+        include_lineage: bool = False,
+        include_reports: bool = False,
+    ) -> Iterator[None]:
+        """以表快照实现的最小事务：异常时把模块表（及血缘/报告台账）回滚。"""
+        with self._lock:
+            tables_snapshot = {
+                module: copy.deepcopy(self.rows(module)) for module in modules
+            }
+            ledger_snapshot = copy.deepcopy(self._lineage_ledger) if include_lineage else None
+            reports_snapshot = copy.deepcopy(self._replay_reports) if include_reports else None
+            try:
+                yield
+            except Exception:
+                for module, rows in tables_snapshot.items():
+                    self._tables[module] = rows
+                if ledger_snapshot is not None:
+                    self._lineage_ledger = ledger_snapshot
+                if reports_snapshot is not None:
+                    self._replay_reports = reports_snapshot
+                raise
+
+    # ---- 指标血缘版本台账 ----
+
+    def save_lineage_version(self, version: dict[str, Any]) -> dict[str, Any]:
+        """写入/更新一个血缘版本；台账以 version_id 为主键，重试幂等。"""
+        version_id = str(version["version_id"])
+        self._lineage_ledger[version_id] = version
+        return version
+
+    def get_lineage_version(self, version_id: str) -> dict[str, Any] | None:
+        return self._lineage_ledger.get(str(version_id))
+
+    def lineage_versions(
+        self, metric: str | None = None, *, current_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        """按创建时间返回血缘版本台账，可按指标、当前版本过滤。"""
+        versions = list(self._lineage_ledger.values())
+        if metric:
+            versions = [v for v in versions if v.get("metric") == metric]
+        if current_only:
+            versions = [v for v in versions if v.get("current")]
+        versions.sort(key=lambda v: (v.get("created_at", 0), v.get("version", 0)))
+        return versions
+
+    def next_lineage_version_no(self, metric: str) -> int:
+        """同一指标内单调递增分配版本号，刷新重试不会跳号。"""
+        versions = self.lineage_versions(metric)
+        return max((int(v.get("version", 0)) for v in versions), default=0) + 1
+
+    # ---- 回放验证报告台账 ----
+
+    def save_replay_report(self, report: dict[str, Any]) -> dict[str, Any]:
+        self._replay_reports[str(report["report_id"])] = report
+        return report
+
+    def get_replay_report(self, report_id: str) -> dict[str, Any] | None:
+        return self._replay_reports.get(str(report_id))
+
+    def replay_reports(
+        self,
+        *,
+        task_id: int | None = None,
+        version_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        reports = list(self._replay_reports.values())
+        if task_id is not None:
+            reports = [r for r in reports if r.get("task_id") == task_id]
+        if version_id is not None:
+            reports = [r for r in reports if r.get("lineage_version_id") == version_id]
+        reports.sort(key=lambda r: r.get("created_at", 0))
+        return reports
 
     # ---- 跨模块数据通道 ----
 

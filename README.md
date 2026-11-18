@@ -79,5 +79,39 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 指标血缘版本与回放验证
+
+指标血缘不再只保存一段路径文本，而是维护一份**路径版本台账**
+（`app/store.py::_lineage_ledger`），每条血缘记录都绑定一个「来源批次 + 路径版本」。
+
+- 刷新：`POST /api/metric-lineage/refresh`（也可走行内动作「刷新血缘」）。
+  可由检查点驱动，记录检查点快照时点；同一指标、同一路径、同一检查点的并发
+  或重复刷新复用同一个版本，不产生两个当前版本。
+- 版本台账：`GET /api/metric-lineage/versions?metric=...`；
+  单版本详情（含路径核对、检查点、回放报告）：
+  `GET /api/metric-lineage/versions/{version_id}`。
+- 确认：`POST /api/metric-lineage/confirm`。只有仍为当前版本、且实时算子链
+  未变化的版本才能确认；历史版本不能被确认或标记断链。
+- 健康同步：读取列表/详情前会对照 `calc_operator`、`sink_output` 等实时模块，
+  算子缺失记为「断链」、路径变化记为「变更中」，算子链调整后旧血缘不再显示正常。
+
+回放引擎（`app/services/replay_engine.py`）读取血缘版本与检查点：
+
+- `GET /api/replay-engine/validate` 核对当前版本、可用检查点与历史验证报告；
+- `POST /api/replay-engine/validate` 创建回放任务（可带 `execute` 直接执行），
+  只接受已确认且算子链完整的血缘版本，并在锁内固定创建时点的版本
+  （`_lineage_pinned_at`）；
+- `POST /api/replay-engine/{task_id}/execute` 执行回放并生成回放验证报告，
+  报告写清算子缺失、路径变化、使用的检查点与检查点快照时点；
+- `GET /api/replay-engine/history`、`GET /api/replay-engine/verification`
+  供血缘详情页按路径版本核对验证结果。
+
+并发与一致性：血缘刷新与回放创建共用 `store.lock()`，先拿到锁的一方决定快照
+时点；写入走 `store.transaction(...)`，失败时回滚到上一份完整版本。
+
+前端在「指标血缘」页面内嵌 `frontend/src/views/LineagePanel.vue`：
+上方是路径版本台账与 DAG 路径，下方是回放历史与验证报告，复核人员可直接
+确认版本、以某个版本创建回放并核对结果。
+
 领域：数据工程
 子方向：数据分析与数据应用

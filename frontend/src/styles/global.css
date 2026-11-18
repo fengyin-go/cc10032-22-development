@@ -70,3 +70,28 @@ body { margin: 0; background: #f6f8fb; color: #1f2937; }
 .analysis-chart { display: flex; align-items: flex-end; gap: 8px; height: 160px; padding: 12px 0; }
 .analysis-bar { flex: 1; border-radius: 4px 4px 0 0; background: var(--brand); min-width: 24px; position: relative; transition: height 0.4s; }
 .analysis-bar span { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--muted); white-space: nowrap; }
+/* 指标血缘版本面板 */
+.module-extension { margin-top: 20px; }
+.lineage-panel { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
+.panel-head h3 { margin: 0; font-size: 15px; }
+.panel-actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.inline-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.inline-field select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; min-width: 140px; }
+.panel-message { font-size: 13px; color: #15803d; margin: 0 0 10px; }
+.panel-message.error { color: #b42318; }
+.lineage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.lineage-col h4 { margin: 0 0 8px; font-size: 14px; }
+.lineage-col .data-table { width: 100%; }
+.lineage-col tbody tr { cursor: pointer; }
+.lineage-col tbody tr.row-active { background: #eff6ff; }
+.node-sub { fill: #64748b; font-size: 10px; }
+.drift-block { border: 1px dashed #f59e0b; border-radius: 8px; padding: 10px 14px; background: #fffbeb; margin-bottom: 16px; }
+.drift-block h4 { margin: 0 0 6px; font-size: 13px; }
+.drift-item { margin: 2px 0; font-size: 13px; color: #92400e; }
+.report-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: #fafbfc; font-size: 13px; }
+.report-card p { margin: 4px 0; }
+@media (max-width: 1080px) {
+  .lineage-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.version-meta { display: block; font-size: 11px; color: var(--muted); }

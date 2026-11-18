@@ -22,6 +22,13 @@
       </article>
     </div>
 
+    <LineagePanel
+      v-if="meta.key === 'metric_lineage'"
+      ref="lineagePanel"
+      :metrics="lineageMetrics"
+      class="module-extension"
+    />
+
     <p class="status-legend">
       <span v-for="item in statusSummary" :key="item.status" class="legend-item">
         {{ item.status }}：{{ item.count }}
@@ -41,6 +48,8 @@
       <thead>
         <tr>
           <th v-for="column in meta.fields" :key="column">{{ column }}</th>
+          <th v-if="meta.key === 'metric_lineage'">来源批次</th>
+          <th v-if="meta.key === 'metric_lineage'">路径版本</th>
           <th>当前状态</th>
           <th>可执行动作</th>
         </tr>
@@ -48,6 +57,10 @@
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)" :data-testid="`row-${row.id}`" :data-status="String(row.status)">
           <td v-for="column in meta.fields" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-if="meta.key === 'metric_lineage'">{{ row['来源批次'] ?? '—' }}</td>          <td v-if="meta.key === 'metric_lineage'">
+            {{ row['路径版本'] ?? '—' }}
+            <span v-if="row['检查点ID']" class="version-meta">检查点 {{ row['检查点ID'] }}</span>
+          </td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
             <button
@@ -60,10 +73,31 @@
             >
               {{ action }}
             </button>
+            <button
+              v-if="meta.key === 'metric_lineage'"
+              class="link"
+              type="button"
+              :data-testid="`replay-${row.id}`"
+              @click="lineagePanel?.focusMetric(String(row['指标名称'] ?? ''), 'replay')"
+            >
+              回放核对
+            </button>
+            <button
+              v-if="meta.key === 'metric_lineage'"
+              class="link"
+              type="button"
+              :data-testid="`versions-${row.id}`"
+              @click="lineagePanel?.focusMetric(String(row['指标名称'] ?? ''), 'versions')"
+            >
+              查看版本
+            </button>
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="meta.fields.length + 2" class="empty-state">
+          <td
+            :colspan="meta.fields.length + 2 + (meta.key === 'metric_lineage' ? 2 : 0)"
+            class="empty-state"
+          >
             暂无{{ meta.name }}数据，可先登记{{ meta.entity }}
           </td>
         </tr>
@@ -104,6 +138,7 @@ import {
   runAction as applyAction,
 } from '@/api/backend-service'
 import type { EntryRow } from '@/data/types'
+import LineagePanel from '@/views/LineagePanel.vue'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)
@@ -115,6 +150,12 @@ const filterFields = meta.fields.slice(0, 3)
 const showCreate = ref(false)
 const creating = ref(false)
 const createValues = ref<Record<string, string>>({})
+const lineagePanel = ref<InstanceType<typeof LineagePanel> | null>(null)
+const lineageMetrics = computed(() =>
+  rows.value
+    .map((row) => String(row['指标名称'] ?? ''))
+    .filter((name, index, list) => name && list.indexOf(name) === index),
+)
 const stats = computed(() => [
   { label: meta.metrics[0], value: total.value },
   { label: meta.metrics[1], value: rows.value.filter((row) => row.status === meta.statuses[1]).length },
